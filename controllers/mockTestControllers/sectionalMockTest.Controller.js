@@ -96,6 +96,7 @@ module.exports.deleteSectionalMockTest = asyncWrapper(async (req, res) => {
 
 module.exports.mockTestResult = async (req, res, next) => {
     const userId = req.user?._id;
+    let creditsDeducted = false;
     try {
         const { questionId, mockTestId } = req.body;
 
@@ -150,17 +151,18 @@ module.exports.mockTestResult = async (req, res, next) => {
             return res.status(404).json({ success: false, message: "Active subscription not found" });
         }
 
-        if (subscription.mockTestLimit > 0) {
+        if (subscription.credits > 0) {
             await supscriptionModel.findOneAndUpdate(
                 { _id: subscription._id },
                 {
                     $inc: {
-                        credits: 1,
+                        credits: -1,
                     }
                 }
             );
+            creditsDeducted = true;
         } else {
-            return res.status(403).json({ success: false, message: "Your mock test limit is 0" });
+            return res.status(403).json({ success: false, message: "Your AI credits are 0" });
         }
 
 
@@ -365,17 +367,15 @@ module.exports.mockTestResult = async (req, res, next) => {
             return res.status(404).json({ success: false, message: "Active subscription not found" });
         }
 
-        if (subscription.mockTestLimit > 0) {
+        if (creditsDeducted) {
             await supscriptionModel.findOneAndUpdate(
                 { _id: subscription._id },
                 {
                     $inc: {
-                        credits: -1,
+                        credits: 1,
                     }
                 }
             );
-        } else {
-            return res.status(403).json({ success: false, message: "Your mock test limit is 0" });
         }
         next(error);
     }
