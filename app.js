@@ -71,6 +71,7 @@ const userModel = require('./models/user.models');
 const ExpressError = require('./utils/ExpressError');
 const { isUserLoggedIn } = require('./middleware/middlewares');
 const StripePaymentGateway = require('./models/payment.model');
+const Subscription = require('./models/supscription.model');
 
 const seed = require('./seedScript');
 
@@ -102,6 +103,29 @@ cron.schedule('0 0 0 * * *', async () => {
 
   } catch (err) {
     console.error('❌ Cron error:', err);
+  }
+});
+
+cron.schedule('0 0 1 * * *', async () => {
+  try {
+    await Subscription.updateMany(
+      { coachingUnlimited: { $ne: true }, coachingDays: { $gt: 0 } },
+      [
+        {
+          $set: {
+            coachingDays: {
+              $cond: [
+                { $gt: ['$coachingDays', 0] },
+                { $subtract: ['$coachingDays', 1] },
+                0
+              ]
+            }
+          }
+        }
+      ]
+    );
+  } catch (err) {
+    console.error('Coaching days cron error:', err);
   }
 });
 

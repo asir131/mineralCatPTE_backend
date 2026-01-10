@@ -169,7 +169,24 @@ module.exports.signupWithGoogle = (req, res) => {
 module.exports.userInfo = asyncWrapper(async (req, res) => {
   const user = req.user;
   const userData = await userModels.findById(user._id).select(['-password']).populate("userSubscription");
-  return res.status(200).json({ user: userData });
+  const userObj = userData ? userData.toObject() : null;
+
+  if (userObj?.userSubscription) {
+    const subscription = userObj.userSubscription;
+    const coachingUnlimited = Boolean(subscription.coachingUnlimited);
+    let coachingDays = 0;
+
+    if (coachingUnlimited) {
+      coachingDays = null;
+    } else if (subscription.coachingExpiresAt) {
+      const msLeft = new Date(subscription.coachingExpiresAt).getTime() - Date.now();
+      coachingDays = Math.max(0, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+    }
+
+    subscription.coachingDays = coachingDays;
+  }
+
+  return res.status(200).json({ user: userObj });
 });
 
 
@@ -445,64 +462,118 @@ module.exports.userProgress = asyncWrapper(async (req, res) => {
     });
   }
 
-  const questionTypes = ['speaking', 'writing', 'reading', 'listening'];
-  const typeProgress = {};
+  const questionCountsPromise = questionModel.aggregate([
+    {
+      $group: {
+        _id: { type: "$type", subtype: "$subtype" },
+        count: { $sum: 1 }
+      }
+    }
+  ]);
+
+  const practicesPromise = practicedModel
+    .find({ user: userId })
+    .select("questionType subtype practicedQuestions completedMockTests completedSectionalTests")
+    .lean();
+
+  const totalMockTestsPromise = mock_testModel.countDocuments();
+  const totalSectionalMockTestsPromise = sectionalMockTestModel.countDocuments();
+  const userSubPromise = supscriptionModel.findOne({ user: userId }).lean();
+
+  const [questionCounts, practices, totalMockTests, totalSectionalMockTests, userSub] =
+    await Promise.all([
+      questionCountsPromise,
+      practicesPromise,
+      totalMockTestsPromise,
+      totalSectionalMockTestsPromise,
+      userSubPromise,
+    ]);
+
   const typeCounts = {};
+  const typeProgress = {};
+
+  for (const entry of questionCounts) {
+    const type = entry._id.type;
+    const subtype = entry._id.subtype;
+
+    if (!typeCounts[type]) {
+      typeCounts[type] = {};
+    }
+
+    typeCounts[type][subtype] = {
+      total: entry.count,
+      completed: 0,
+    };
+  }
+
+  const completedMockTestsSet = new Set();
+  const completedSectionalTestsSet = new Set();
+
+  for (const practice of practices) {
+    const type = practice.questionType;
+    const subtype = practice.subtype;
+    const completed = Array.isArray(practice.practicedQuestions)
+      ? practice.practicedQuestions.length
+      : 0;
+
+    if (!typeCounts[type]) {
+      typeCounts[type] = {};
+    }
+
+    if (!typeCounts[type][subtype]) {
+      typeCounts[type][subtype] = { total: 0, completed: 0 };
+    }
+
+    typeCounts[type][subtype].completed = completed;
+
+    if (Array.isArray(practice.completedMockTests)) {
+      for (const id of practice.completedMockTests) {
+        completedMockTestsSet.add(id.toString());
+      }
+    }
+
+    if (Array.isArray(practice.completedSectionalTests)) {
+      for (const id of practice.completedSectionalTests) {
+        completedSectionalTestsSet.add(id.toString());
+      }
+    }
+  }
+
+  const questionTypes = ["speaking", "writing", "reading", "listening"];
 
   for (const type of questionTypes) {
-    const subtypes = await questionModel.distinct('subtype', { type });
-
+    const subtypes = typeCounts[type] || {};
     let totalQuestionsAll = 0;
     let completedAll = 0;
 
-    typeCounts[type] = {};
-
-    for (const subtype of subtypes) {
-      const totalQuestions = await questionModel.countDocuments({ type, subtype });
-      const practiceDoc = await practicedModel.findOne({ user: userId, questionType: type, subtype });
-      const completed = practiceDoc?.practicedQuestions?.length || 0;
-
-      totalQuestionsAll += totalQuestions;
-      completedAll += completed;
-
-      typeCounts[type][subtype] = { total: totalQuestions, completed };
+    for (const counts of Object.values(subtypes)) {
+      totalQuestionsAll += counts.total || 0;
+      completedAll += counts.completed || 0;
     }
 
-    const percent = totalQuestionsAll === 0 ? 0 : Math.round((completedAll / totalQuestionsAll) * 100);
+    const percent = totalQuestionsAll === 0
+      ? 0
+      : Math.round((completedAll / totalQuestionsAll) * 100);
+
     typeProgress[type] = `${percent}%`;
   }
-
-  const totalMockTests = await mock_testModel.countDocuments();
-  const completedMockTests = await practicedModel.distinct('completedMockTests', { user: userId });
-
-  const totalSectionalMockTests = await sectionalMockTestModel.countDocuments();
-  const completedSectionalTests = await practicedModel.distinct('completedSectionalTests', { user: userId });
-
-  const userSub = await supscriptionModel.findOne({ user: userId });
 
   const progressData = {
     typeProgress,
     typeCounts,
-    mockTests: { total: totalMockTests, completed: completedMockTests.length },
-    sectionalMockTests: { total: totalSectionalMockTests, completed: completedSectionalTests.length }
+    mockTests: { total: totalMockTests, completed: completedMockTestsSet.size },
+    sectionalMockTests: { total: totalSectionalMockTests, completed: completedSectionalTestsSet.size }
   };
 
-  cache.set(userId, { data: progressData, userTarget: userSub.aiScoringLimit });
+  cache.set(userId, { data: progressData, userTarget: userSub?.aiScoringLimit || 0 });
 
   res.status(200).json({
     success: true,
     data: progressData,
-    userTarget: userSub.aiScoringLimit,
+    userTarget: userSub?.aiScoringLimit || 0,
     cached: false,
   });
 });
-
-
-
-
-
-
-
 
 module.exports.userPaymentHistory = asyncWrapper(async (req, res) => {
   const userId = req.user._id;

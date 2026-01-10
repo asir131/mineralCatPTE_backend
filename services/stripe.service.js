@@ -282,7 +282,9 @@ async function createCheckoutSession(userId, paymentDetails) {
       price,
       description = 'Truck rental payment',
       planValidity,
-      planType
+      planType,
+      successUrl,
+      cancelUrl
     } = paymentDetails;
 
     // Add validation for required fields
@@ -335,6 +337,12 @@ async function createCheckoutSession(userId, paymentDetails) {
       );
     }
 
+    const resolvedSuccessUrl = successUrl || config.stripe_payment_gateway.checkout_success_url;
+    const resolvedCancelUrl = cancelUrl || config.stripe_payment_gateway.checkout_cancel_url;
+    const successUrlWithSession = resolvedSuccessUrl.includes('?')
+      ? `${resolvedSuccessUrl}&sessionId={CHECKOUT_SESSION_ID}`
+      : `${resolvedSuccessUrl}?sessionId={CHECKOUT_SESSION_ID}`;
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
@@ -356,8 +364,8 @@ async function createCheckoutSession(userId, paymentDetails) {
         planType: planType.toString()
       },
       mode: 'payment',
-      success_url: `${config.stripe_payment_gateway.checkout_success_url}?sessionId={CHECKOUT_SESSION_ID}`,
-      cancel_url: config.stripe_payment_gateway.checkout_cancel_url,
+      success_url: successUrlWithSession,
+      cancel_url: resolvedCancelUrl,
     });
 
     const paymentData = {
@@ -370,6 +378,266 @@ async function createCheckoutSession(userId, paymentDetails) {
       price: paymentDetails.price,
       description: paymentDetails.description,
       planType: paymentDetails.planType,
+    };
+
+    const paymentResult = await StripePaymentGateway.create(paymentData);
+
+    if (!paymentResult) {
+      throw new ApiError(
+        httpStatus.NOT_IMPLEMENTED,
+        'Issues with stripe checkout session'
+      );
+    }
+
+    return {
+      checkoutUrl: session.url,
+      sessionId: session.id,
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(
+      httpStatus.SERVICE_UNAVAILABLE,
+      `Checkout service unavailable: ${error.message || 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Creates a checkout session for mock test package purchase
+ * @param {string} userId - User ID
+ * @param {Object} paymentDetails - Payment details including price and mockTestCount
+ * @returns {Promise<Object>} - Checkout session details
+ */
+async function createMockTestCheckoutSession(userId, paymentDetails) {
+  try {
+    const {
+      price,
+      description = 'Mock test package',
+      mockTestCount,
+      successUrl,
+      cancelUrl
+    } = paymentDetails;
+
+    if (!price || price <= 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Price must be a positive number'
+      );
+    }
+
+    if (!mockTestCount || mockTestCount <= 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'mockTestCount must be a positive number'
+      );
+    }
+
+    const mockTestPackages = {
+      1: 3.49,
+      3: 8.49,
+      5: 12.49
+    };
+
+    const expectedPrice = mockTestPackages[mockTestCount];
+
+    if (!expectedPrice) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid mockTestCount. Available packages: 1, 3, 5'
+      );
+    }
+
+    if (parseFloat(price) !== expectedPrice) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Invalid price for ${mockTestCount} mock tests. Expected: ${expectedPrice}, received: ${price}`
+      );
+    }
+
+    const user = await User.findOne({
+      _id: userId,
+      status: USER_STATUS.PROGRESS
+    }).select('stripeAccountId email');
+
+    if (!user) {
+      throw new ApiError(
+        httpStatus.NOT_FOUND,
+        'User not found or not verified'
+      );
+    }
+
+    const resolvedSuccessUrl = successUrl || config.stripe_payment_gateway.checkout_success_url;
+    const resolvedCancelUrl = cancelUrl || config.stripe_payment_gateway.checkout_cancel_url;
+    const successUrlWithSession = resolvedSuccessUrl.includes('?')
+      ? `${resolvedSuccessUrl}&sessionId={CHECKOUT_SESSION_ID}`
+      : `${resolvedSuccessUrl}?sessionId={CHECKOUT_SESSION_ID}`;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: 'Mock Test Package',
+              description: description,
+            },
+            unit_amount: Math.round(price * 100),
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        userId: userId.toString(),
+        purchaseType: 'mocktest',
+        mockTestCount: mockTestCount.toString()
+      },
+      mode: 'payment',
+      success_url: successUrlWithSession,
+      cancel_url: resolvedCancelUrl,
+    });
+
+    const paymentData = {
+      currency: session.currency,
+      sessionId: session.id,
+      userId: session.metadata.userId,
+      paymentMethod: session.payment_method_types[0],
+      paymentStatus: session.payment_status,
+      price: paymentDetails.price,
+      description: paymentDetails.description,
+    };
+
+    const paymentResult = await StripePaymentGateway.create(paymentData);
+
+    if (!paymentResult) {
+      throw new ApiError(
+        httpStatus.NOT_IMPLEMENTED,
+        'Issues with stripe checkout session'
+      );
+    }
+
+    return {
+      checkoutUrl: session.url,
+      sessionId: session.id,
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+
+    throw new ApiError(
+      httpStatus.SERVICE_UNAVAILABLE,
+      `Checkout service unavailable: ${error.message || 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Creates a checkout session for coaching plan purchase
+ * @param {string} userId - User ID
+ * @param {Object} paymentDetails - Payment details including price and coachingPlanType
+ * @returns {Promise<Object>} - Checkout session details
+ */
+async function createCoachingCheckoutSession(userId, paymentDetails) {
+  try {
+    const {
+      price,
+      description = 'Coaching plan',
+      coachingPlanType,
+      successUrl,
+      cancelUrl
+    } = paymentDetails;
+
+    if (!price || price <= 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Price must be a positive number'
+      );
+    }
+
+    if (!coachingPlanType) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'coachingPlanType is required'
+      );
+    }
+
+    const coachingPlanPrices = {
+      'Essential': 199.99,
+      'Premium': 299.99,
+      'Master': 499.99
+    };
+
+    const expectedPrice = coachingPlanPrices[coachingPlanType];
+
+    if (!expectedPrice) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid coachingPlanType. Available plans: Essential, Premium, Master'
+      );
+    }
+
+    if (parseFloat(price) !== expectedPrice) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Invalid price for ${coachingPlanType} plan. Expected: ${expectedPrice}, received: ${price}`
+      );
+    }
+
+    const user = await User.findOne({
+      _id: userId,
+      status: USER_STATUS.PROGRESS
+    }).select('stripeAccountId email');
+
+    if (!user) {
+      throw new ApiError(
+        httpStatus.NOT_FOUND,
+        'User not found or not verified'
+      );
+    }
+
+    const resolvedSuccessUrl = successUrl || config.stripe_payment_gateway.checkout_success_url;
+    const resolvedCancelUrl = cancelUrl || config.stripe_payment_gateway.checkout_cancel_url;
+    const successUrlWithSession = resolvedSuccessUrl.includes('?')
+      ? `${resolvedSuccessUrl}&sessionId={CHECKOUT_SESSION_ID}`
+      : `${resolvedSuccessUrl}?sessionId={CHECKOUT_SESSION_ID}`;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: 'Coaching Plan',
+              description: description,
+            },
+            unit_amount: Math.round(price * 100),
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        userId: userId.toString(),
+        purchaseType: 'coaching',
+        coachingPlanType: coachingPlanType.toString()
+      },
+      mode: 'payment',
+      success_url: successUrlWithSession,
+      cancel_url: resolvedCancelUrl,
+    });
+
+    const paymentData = {
+      currency: session.currency,
+      sessionId: session.id,
+      userId: session.metadata.userId,
+      paymentMethod: session.payment_method_types[0],
+      paymentStatus: session.payment_status,
+      price: paymentDetails.price,
+      description: paymentDetails.description,
     };
 
     const paymentResult = await StripePaymentGateway.create(paymentData);
@@ -462,17 +730,198 @@ async function handleWebhook(event) {
           throw new Error('Missing userId in checkout session metadata');
         }
 
+        const userId = session.metadata.userId;
+        const transactionId = session.payment_intent || session.id;
+        const amountPaid = session.amount_total / 100;
+        const currency = session.currency;
+        const purchaseType = session.metadata.purchaseType || 'subscription';
+
+        if (purchaseType === 'mocktest') {
+          const mockTestCount = parseInt(session.metadata.mockTestCount, 10);
+
+          if (isNaN(mockTestCount) || mockTestCount <= 0) {
+            throw new Error('Invalid mockTestCount in checkout session metadata');
+          }
+
+          try {
+            let subscription = await Subscription.findOne({ user: userId });
+
+            if (subscription) {
+              await Subscription.findByIdAndUpdate(
+                subscription._id,
+                { $inc: { mockTestLimit: mockTestCount }, $set: { isActive: true } }
+              );
+              subscription = await Subscription.findById(subscription._id);
+              console.log(`Mock test limit updated for user ${userId} by ${mockTestCount}.`);
+            } else {
+              subscription = new Subscription({
+                user: userId,
+                planType: 'Free',
+                isActive: true,
+                mockTestLimit: mockTestCount,
+                aiScoringLimit: 0,
+                credits: 0,
+                weeklyPredictions: false,
+                performanceTracking: false,
+                noExpiration: true,
+                startedAt: new Date(),
+                expiresAt: null
+              });
+              await subscription.save();
+              console.log(`Mock test subscription created for user ${userId}.`);
+            }
+
+            const user = await User.findById(userId);
+            if (user && (!user.userSubscription || user.userSubscription.toString() !== subscription._id.toString())) {
+              user.userSubscription = subscription._id;
+              await user.save();
+              console.log(`User ${userId} 'userSubscription' field updated.`);
+            }
+
+            const paymentRecord = new paymenthistoryModel({
+              user: userId,
+              planType: subscription.planType || 'Free',
+              amount: amountPaid,
+              currency: currency,
+              provider: 'stripe',
+              transactionId: transactionId,
+              paymentDate: new Date(),
+              status: 'success',
+              meta: {
+                sessionId: session.id,
+                purchaseType: 'mocktest',
+                mockTestCount: mockTestCount,
+                subscriptionId: subscription._id,
+                customer: session.customer,
+                email: session.customer_email,
+              },
+            });
+            await paymentRecord.save();
+
+            result = {
+              status: true,
+              message: 'Mock test package successfully processed.',
+            };
+          } catch (dbError) {
+            console.error(`Database error during mock test processing for user ${userId}:`, dbError);
+            throw new Error(`Database operation failed during mock test update: ${dbError.message}`);
+          }
+          break;
+        }
+
+        if (purchaseType === 'coaching') {
+          const coachingPlanType = session.metadata.coachingPlanType;
+
+          if (!coachingPlanType) {
+            throw new Error('Missing coachingPlanType in checkout session metadata');
+          }
+
+          const coachingPlanConfig = {
+            Essential: { days: 30, mockTests: 7, credits: 250, unlimited: false },
+            Premium: { days: 60, mockTests: 7, credits: 250, unlimited: false },
+            Master: { days: null, mockTests: 12, credits: 500, unlimited: true },
+          };
+
+          const configEntry = coachingPlanConfig[coachingPlanType];
+
+          if (!configEntry) {
+            throw new Error(`Invalid coachingPlanType: ${coachingPlanType}`);
+          }
+
+          const now = new Date();
+          const expiresAt = configEntry.unlimited
+            ? null
+            : new Date(now.getTime() + configEntry.days * 24 * 60 * 60 * 1000);
+
+          try {
+            let subscription = await Subscription.findOne({ user: userId });
+
+            if (subscription) {
+              await Subscription.findByIdAndUpdate(
+                subscription._id,
+                {
+                  $inc: {
+                    mockTestLimit: configEntry.mockTests,
+                    credits: configEntry.credits,
+                    aiScoringLimit: configEntry.credits,
+                  },
+                  $set: {
+                    coachingPlanType: coachingPlanType,
+                    coachingStartedAt: now,
+                    coachingExpiresAt: expiresAt,
+                    coachingUnlimited: configEntry.unlimited,
+                    coachingDays: configEntry.unlimited ? null : configEntry.days,
+                    isActive: true,
+                  }
+                }
+              );
+              subscription = await Subscription.findById(subscription._id);
+            } else {
+              subscription = new Subscription({
+                user: userId,
+                planType: 'Free',
+                isActive: true,
+                mockTestLimit: configEntry.mockTests,
+                credits: configEntry.credits,
+                aiScoringLimit: configEntry.credits,
+                coachingPlanType: coachingPlanType,
+                coachingStartedAt: now,
+                coachingExpiresAt: expiresAt,
+                coachingUnlimited: configEntry.unlimited,
+                coachingDays: configEntry.unlimited ? null : configEntry.days,
+                weeklyPredictions: false,
+                performanceTracking: false,
+                noExpiration: true,
+                startedAt: now,
+                expiresAt: null
+              });
+              await subscription.save();
+            }
+
+            const user = await User.findById(userId);
+            if (user && (!user.userSubscription || user.userSubscription.toString() !== subscription._id.toString())) {
+              user.userSubscription = subscription._id;
+              await user.save();
+            }
+
+            const paymentRecord = new paymenthistoryModel({
+              user: userId,
+              planType: subscription.planType || 'Free',
+              amount: amountPaid,
+              currency: currency,
+              provider: 'stripe',
+              transactionId: transactionId,
+              paymentDate: now,
+              status: 'success',
+              meta: {
+                sessionId: session.id,
+                purchaseType: 'coaching',
+                coachingPlanType: coachingPlanType,
+                subscriptionId: subscription._id,
+                customer: session.customer,
+                email: session.customer_email,
+              },
+            });
+            await paymentRecord.save();
+
+            result = {
+              status: true,
+              message: 'Coaching plan successfully processed.',
+            };
+          } catch (dbError) {
+            console.error(`Database error during coaching processing for user ${userId}:`, dbError);
+            throw new Error(`Database operation failed during coaching update: ${dbError.message}`);
+          }
+          break;
+        }
+
         if (!session.metadata.planType) {
           console.error('Missing planType in checkout session metadata');
           console.error('Available metadata keys:', Object.keys(session.metadata));
           throw new Error('Missing planType in checkout session metadata');
         }
 
-        const userId = session.metadata.userId;
         const planType = session.metadata.planType;
-        const transactionId = session.payment_intent || session.id;
-        const amountPaid = session.amount_total / 100;
-        const currency = session.currency;
 
         // Determine plan validity in days
         const planValidityDays = parseInt(session.metadata.planValidity, 10);
@@ -597,5 +1046,7 @@ module.exports = {
   createPaymentIntent,
   retrievePaymentStatus,
   createCheckoutSession,
+  createMockTestCheckoutSession,
+  createCoachingCheckoutSession,
   handleWebhook
 };

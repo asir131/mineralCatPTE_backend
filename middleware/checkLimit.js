@@ -19,7 +19,16 @@ module.exports.checkLimit = (limits) => {
             let errorMessages = [];
 
             if (user.userSubscription.planType == "Free") {
-                return res.status(401).json({message: 'Please Upgrade to see the result'})
+                const wantsMock = limits.includes("mock");
+                const wantsCredits = limits.includes("aicredits");
+
+                if (wantsCredits && subscription.credits <= 0) {
+                    return res.status(401).json({message: 'Please Upgrade to see the result'})
+                }
+
+                if (wantsMock && subscription.mockTestLimit <= 0) {
+                    return res.status(401).json({message: 'Please Upgrade to see the result'})
+                }
             }
 
             if (limits.includes("mock") && subscription.mockTestLimit <= 0) {

@@ -39,6 +39,24 @@ const subscriptionSchema = new Schema({
         type: Boolean,
         default: false,
     },
+    coachingPlanType: {
+        type: String,
+        enum: ['Essential', 'Premium', 'Master'],
+    },
+    coachingStartedAt: {
+        type: Date,
+    },
+    coachingExpiresAt: {
+        type: Date,
+    },
+    coachingUnlimited: {
+        type: Boolean,
+        default: false,
+    },
+    coachingDays: {
+        type: Number,
+        default: 0,
+    },
     startedAt: {
         type: Date,
         default: Date.now,

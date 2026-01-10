@@ -98,7 +98,7 @@ router.get('/payment-status/:paymentIntentId', async (req, res) => {
 // Create checkout session
 router.post('/create-checkout-session', isUserLoggedIn, async (req, res) => {
   try {
-    const { price, description, planValidity, planType } = req.body;
+    const { price, description, planValidity, planType, successUrl, cancelUrl } = req.body;
     
     if (!price) {
       return res.status(400).json({
@@ -107,9 +107,79 @@ router.post('/create-checkout-session', isUserLoggedIn, async (req, res) => {
       });
     }
     
-    const paymentDetails = { price, description, planValidity, planType };
+    const paymentDetails = { price, description, planValidity, planType, successUrl, cancelUrl };
     const result = await stripeService.createCheckoutSession(req.user._id, paymentDetails);
     
+    res.status(200).json({
+      status: true,
+      message: 'Checkout session created successfully',
+      data: result
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      status: false,
+      message: error.message || 'An error occurred while creating checkout session'
+    });
+  }
+});
+
+// Create checkout session for mock test packages
+router.post('/create-mocktest-checkout-session', isUserLoggedIn, async (req, res) => {
+  try {
+    const { price, description, mockTestCount, successUrl, cancelUrl } = req.body;
+
+    if (!price) {
+      return res.status(400).json({
+        status: false,
+        message: 'Price is required'
+      });
+    }
+
+    if (!mockTestCount) {
+      return res.status(400).json({
+        status: false,
+        message: 'mockTestCount is required'
+      });
+    }
+
+    const paymentDetails = { price, description, mockTestCount, successUrl, cancelUrl };
+    const result = await stripeService.createMockTestCheckoutSession(req.user._id, paymentDetails);
+
+    res.status(200).json({
+      status: true,
+      message: 'Checkout session created successfully',
+      data: result
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({
+      status: false,
+      message: error.message || 'An error occurred while creating checkout session'
+    });
+  }
+});
+
+// Create checkout session for coaching plans
+router.post('/create-coaching-checkout-session', isUserLoggedIn, async (req, res) => {
+  try {
+    const { price, description, coachingPlanType, successUrl, cancelUrl } = req.body;
+
+    if (!price) {
+      return res.status(400).json({
+        status: false,
+        message: 'Price is required'
+      });
+    }
+
+    if (!coachingPlanType) {
+      return res.status(400).json({
+        status: false,
+        message: 'coachingPlanType is required'
+      });
+    }
+
+    const paymentDetails = { price, description, coachingPlanType, successUrl, cancelUrl };
+    const result = await stripeService.createCoachingCheckoutSession(req.user._id, paymentDetails);
+
     res.status(200).json({
       status: true,
       message: 'Checkout session created successfully',
