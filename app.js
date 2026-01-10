@@ -27,13 +27,20 @@ if (process.env.FRONTEND_URL) {
     allowedOrigins.push(process.env.FRONTEND_URL);
 }
 
+if (process.env.FRONTEND_URLS) {
+    const extraOrigins = process.env.FRONTEND_URLS.split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    allowedOrigins.push(...extraOrigins);
+}
+
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(null, false);
     }
   },
   credentials: true,
