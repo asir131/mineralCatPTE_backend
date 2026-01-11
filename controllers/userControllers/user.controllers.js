@@ -28,13 +28,15 @@ module.exports.signUpUser = asyncWrapper(async (req, res) => {
     return res.status(400).json({ error: error.details[0].message });
   }
 
-  const { name, email, password } = value;
+  const { name, phone, city, email, password } = value;
 
   const checkUser = await userModels.findOne({ email });
   if (checkUser) return res.json({ message: "A user already exists with this email" });
 
   const newUser = await userModels.create({
     name,
+    phone,
+    city,
     email,
     password,
   });

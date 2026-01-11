@@ -3,6 +3,8 @@ const Joi = require('joi');
 
 module.exports.userSchemaValidator = Joi.object({
     name: Joi.string().required(),
+    phone: Joi.string().required(),
+    city: Joi.string().required(),
     email: Joi.string().email().required(),
     password: Joi.string().min(8).required()
 })
