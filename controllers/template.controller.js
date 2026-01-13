@@ -38,7 +38,7 @@ const uploadPdfToCloudinary = async (file, folderName) => {
   const result = await cloudinary.uploader.upload(file.path, {
     folder: folderName,
     resource_type: "raw",
-    access_mode: "public",
+    type: "upload", // Explicitly set as upload type for public access
     use_filename: true,
     unique_filename: true,
   });
@@ -52,29 +52,6 @@ const deleteCloudinaryAsset = async (publicId) => {
   } catch (error) {
     // Ignore delete errors
   }
-};
-
-const getSignedDownloadUrl = (file) => {
-  const publicId = file.publicId || "";
-  if (!publicId) return null;
-  const publicIdExtensionMatch = publicId.match(/\.([^.]+)$/);
-  const extension =
-    publicIdExtensionMatch?.[1] ||
-    path.extname(file.originalName || "").replace(".", "") ||
-    "pdf";
-  const basePublicId = publicId.replace(/\.[^/.]+$/, "");
-  const version = file.version;
-
-  return cloudinary.url(basePublicId, {
-    resource_type: "raw",
-    type: "authenticated",
-    sign_url: true,
-    secure: true,
-    expires_at: Math.floor(Date.now() / 1000) + 300,
-    format: extension,
-    flags: "attachment",
-    ...(version ? { version } : {}),
-  });
 };
 
 module.exports.uploadTemplate = async (req, res, next) => {
@@ -136,11 +113,10 @@ module.exports.uploadTemplate = async (req, res, next) => {
       size: req.file.size,
     };
 
-    const updated = await TemplateFile.findOneAndUpdate(
-      { category },
-      payload,
-      { new: true, upsert: true }
-    );
+    const updated = await TemplateFile.findOneAndUpdate({ category }, payload, {
+      new: true,
+      upsert: true,
+    });
 
     return res.status(200).json({
       message: "Template uploaded successfully",
@@ -193,16 +169,11 @@ module.exports.downloadTemplate = async (req, res, next) => {
     }
 
     if (useCloudinary()) {
-      if (existing.fileUrl) {
-        return res.redirect(existing.fileUrl);
+      if (!existing.fileUrl) {
+        throw new ExpressError(404, "Template file not found");
       }
-      if (existing.publicId) {
-        const signedUrl = getSignedDownloadUrl(existing);
-        if (!signedUrl) {
-          throw new ExpressError(404, "Template file not found");
-        }
-        return res.redirect(signedUrl);
-      }
+      // Simply redirect to the public URL
+      return res.redirect(existing.fileUrl);
     }
 
     if (!existing.filePath) {
