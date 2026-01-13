@@ -22,6 +22,7 @@ const allowedOrigins = [
   "http://209.142.65.188:3000",
   "209.142.65.188:3000",
   "https://mineral-cat-pte-frontend-latest.vercel.app",
+  "https://mineral-cat-pte-admin-dashboard.vercel.app",
 ];
 
 if (process.env.FRONTEND_URL) {
