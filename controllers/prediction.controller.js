@@ -41,6 +41,32 @@ const deleteCloudinaryAsset = async (publicId) => {
   }
 };
 
+// Generate a public download URL by changing the resource type in the URL
+const getPublicDownloadUrl = (file) => {
+  const publicId = file.publicId || "";
+  if (!publicId) return null;
+
+  // Extract extension from publicId or originalName
+  const publicIdExtensionMatch = publicId.match(/\.([^.]+)$/);
+  const extension =
+    publicIdExtensionMatch?.[1] ||
+    path.extname(file.originalName || "").replace(".", "") ||
+    "pdf";
+
+  const basePublicId = publicId.replace(/\.[^/.]+$/, "");
+  const version = file.version;
+
+  // Generate public URL with proper format
+  return cloudinary.url(basePublicId, {
+    resource_type: "raw",
+    type: "upload", // Use upload type instead of authenticated
+    secure: true,
+    format: extension,
+    flags: "attachment",
+    ...(version ? { version } : {}),
+  });
+};
+
 module.exports.listPredictions = async (req, res, next) => {
   try {
     const predictions = await PredictionFile.find({})
@@ -147,11 +173,18 @@ module.exports.downloadPrediction = async (req, res, next) => {
     }
 
     if (useCloudinary()) {
-      if (!existing.fileUrl) {
+      if (!existing.publicId) {
         throw new ExpressError(404, "Prediction file not found");
       }
-      // Simply redirect to the public URL
-      return res.redirect(existing.fileUrl);
+
+      // Generate a public download URL using the publicId
+      const downloadUrl = getPublicDownloadUrl(existing);
+
+      if (!downloadUrl) {
+        throw new ExpressError(404, "Could not generate download URL");
+      }
+
+      return res.redirect(downloadUrl);
     }
 
     if (!existing.filePath) {
