@@ -12,6 +12,10 @@ const safeUnlink = async (filePath) => {
   }
 };
 
+const assertPdf = (file) => {
+  if (!file) throw new ExpressError(400, "Please upload a PDF file");
+};
+
 module.exports.listPredictions = async (req, res, next) => {
   try {
     const predictions = await PredictionFile.find({})
@@ -34,9 +38,7 @@ module.exports.createPrediction = async (req, res, next) => {
       throw new ExpressError(400, "Prediction name is required");
     }
 
-    if (!req.file) {
-      throw new ExpressError(400, "Please upload a PDF file");
-    }
+    assertPdf(req.file);
 
     const created = await PredictionFile.create({
       name,

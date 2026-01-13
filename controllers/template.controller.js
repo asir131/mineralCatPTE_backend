@@ -25,14 +25,16 @@ const safeUnlink = async (filePath) => {
   }
 };
 
+const assertPdf = (file) => {
+  if (!file) throw new ExpressError(400, "Please upload a PDF file");
+};
+
 module.exports.uploadTemplate = async (req, res, next) => {
   try {
     const { category } = req.params;
     validateCategory(category);
 
-    if (!req.file) {
-      throw new ExpressError(400, "Please upload a PDF file");
-    }
+    assertPdf(req.file);
 
     const existing = await TemplateFile.findOne({ category });
 
@@ -100,7 +102,6 @@ module.exports.downloadTemplate = async (req, res, next) => {
     }
 
     const absolutePath = path.resolve(existing.filePath);
-
     return res.download(absolutePath, existing.originalName);
   } catch (error) {
     next(error);
