@@ -1,5 +1,6 @@
 const fs = require("fs/promises");
 const path = require("path");
+const cloudinary = require("../middleware/cloudinary.config");
 const TemplateFile = require("../models/template.model");
 const ExpressError = require("../utils/ExpressError");
 
@@ -29,6 +30,53 @@ const assertPdf = (file) => {
   if (!file) throw new ExpressError(400, "Please upload a PDF file");
 };
 
+const useCloudinary = () =>
+  String(process.env.USE_CLOUDINARY || "").toLowerCase() === "true";
+
+const uploadPdfToCloudinary = async (file, folderName) => {
+  if (!file) throw new ExpressError(400, "Please upload a PDF file");
+  const result = await cloudinary.uploader.upload(file.path, {
+    folder: folderName,
+    resource_type: "raw",
+    access_mode: "authenticated",
+    use_filename: true,
+    unique_filename: true,
+  });
+  return result;
+};
+
+const deleteCloudinaryAsset = async (publicId) => {
+  if (!publicId) return;
+  try {
+    await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
+  } catch (error) {
+    // Ignore delete errors
+  }
+};
+
+const getSignedDownloadUrl = (file) => {
+  const publicId = file.publicId || "";
+  if (!publicId) return null;
+  const publicIdExtensionMatch = publicId.match(/\.([^.]+)$/);
+  const extension =
+    publicIdExtensionMatch?.[1] ||
+    path.extname(file.originalName || "").replace(".", "") ||
+    "pdf";
+  const basePublicId = publicId.replace(/\.[^/.]+$/, "");
+  const version = file.version;
+
+  return cloudinary.url(basePublicId, {
+    resource_type: "raw",
+    type: "authenticated",
+    sign_url: true,
+    secure: true,
+    expires_at: Math.floor(Date.now() / 1000) + 300,
+    format: extension,
+    flags: "attachment",
+    ...(version ? { version } : {}),
+  });
+};
+
 module.exports.uploadTemplate = async (req, res, next) => {
   try {
     const { category } = req.params;
@@ -37,6 +85,43 @@ module.exports.uploadTemplate = async (req, res, next) => {
     assertPdf(req.file);
 
     const existing = await TemplateFile.findOne({ category });
+
+    if (useCloudinary()) {
+      if (existing?.publicId) {
+        await deleteCloudinaryAsset(existing.publicId);
+      }
+
+      const uploaded = await uploadPdfToCloudinary(
+        req.file,
+        `templates/${category}`
+      );
+
+      await safeUnlink(req.file?.path);
+
+      const payload = {
+        category,
+        fileName: uploaded.public_id.split("/").pop(),
+        originalName: req.file.originalname,
+        filePath: "",
+        fileUrl: uploaded.secure_url,
+        publicId: uploaded.public_id,
+        version: uploaded.version,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+      };
+
+      const updated = await TemplateFile.findOneAndUpdate(
+        { category },
+        payload,
+        { new: true, upsert: true }
+      );
+
+      return res.status(200).json({
+        message: "Template uploaded successfully",
+        category: updated.category,
+        fileName: updated.originalName,
+      });
+    }
 
     if (existing?.filePath) {
       await safeUnlink(path.resolve(existing.filePath));
@@ -78,7 +163,13 @@ module.exports.deleteTemplate = async (req, res, next) => {
       throw new ExpressError(404, "Template not found");
     }
 
-    await safeUnlink(path.resolve(existing.filePath));
+    if (useCloudinary()) {
+      if (existing.publicId) {
+        await deleteCloudinaryAsset(existing.publicId);
+      }
+    } else if (existing.filePath) {
+      await safeUnlink(path.resolve(existing.filePath));
+    }
     await TemplateFile.deleteOne({ _id: existing._id });
 
     return res.status(200).json({
@@ -99,6 +190,18 @@ module.exports.downloadTemplate = async (req, res, next) => {
 
     if (!existing) {
       throw new ExpressError(404, "Template not found");
+    }
+
+    if (useCloudinary() && existing.publicId) {
+      const signedUrl = getSignedDownloadUrl(existing);
+      if (!signedUrl) {
+        throw new ExpressError(404, "Template file not found");
+      }
+      return res.redirect(signedUrl);
+    }
+
+    if (!existing.filePath) {
+      throw new ExpressError(404, "Template file not found");
     }
 
     const absolutePath = path.resolve(existing.filePath);

@@ -1,5 +1,6 @@
 const fs = require("fs/promises");
 const path = require("path");
+const cloudinary = require("../middleware/cloudinary.config");
 const PredictionFile = require("../models/prediction.model");
 const ExpressError = require("../utils/ExpressError");
 
@@ -14,6 +15,53 @@ const safeUnlink = async (filePath) => {
 
 const assertPdf = (file) => {
   if (!file) throw new ExpressError(400, "Please upload a PDF file");
+};
+
+const useCloudinary = () =>
+  String(process.env.USE_CLOUDINARY || "").toLowerCase() === "true";
+
+const uploadPdfToCloudinary = async (file, folderName) => {
+  if (!file) throw new ExpressError(400, "Please upload a PDF file");
+  const result = await cloudinary.uploader.upload(file.path, {
+    folder: folderName,
+    resource_type: "raw",
+    access_mode: "authenticated",
+    use_filename: true,
+    unique_filename: true,
+  });
+  return result;
+};
+
+const deleteCloudinaryAsset = async (publicId) => {
+  if (!publicId) return;
+  try {
+    await cloudinary.uploader.destroy(publicId, { resource_type: "raw" });
+  } catch (error) {
+    // Ignore delete errors
+  }
+};
+
+const getSignedDownloadUrl = (file) => {
+  const publicId = file.publicId || "";
+  if (!publicId) return null;
+  const publicIdExtensionMatch = publicId.match(/\.([^.]+)$/);
+  const extension =
+    publicIdExtensionMatch?.[1] ||
+    path.extname(file.originalName || "").replace(".", "") ||
+    "pdf";
+  const basePublicId = publicId.replace(/\.[^/.]+$/, "");
+  const version = file.version;
+
+  return cloudinary.url(basePublicId, {
+    resource_type: "raw",
+    type: "authenticated",
+    sign_url: true,
+    secure: true,
+    expires_at: Math.floor(Date.now() / 1000) + 300,
+    format: extension,
+    flags: "attachment",
+    ...(version ? { version } : {}),
+  });
 };
 
 module.exports.listPredictions = async (req, res, next) => {
@@ -39,6 +87,32 @@ module.exports.createPrediction = async (req, res, next) => {
     }
 
     assertPdf(req.file);
+
+    if (useCloudinary()) {
+      const uploaded = await uploadPdfToCloudinary(req.file, "predictions");
+      await safeUnlink(req.file?.path);
+
+      const created = await PredictionFile.create({
+        name,
+        fileName: uploaded.public_id.split("/").pop(),
+        originalName: req.file.originalname,
+        filePath: "",
+        fileUrl: uploaded.secure_url,
+        publicId: uploaded.public_id,
+        version: uploaded.version,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+      });
+
+      return res.status(201).json({
+        message: "Prediction created successfully",
+        data: {
+          _id: created._id,
+          name: created.name,
+          originalName: created.originalName,
+        },
+      });
+    }
 
     const created = await PredictionFile.create({
       name,
@@ -71,7 +145,13 @@ module.exports.deletePrediction = async (req, res, next) => {
       throw new ExpressError(404, "Prediction not found");
     }
 
-    await safeUnlink(path.resolve(existing.filePath));
+    if (useCloudinary()) {
+      if (existing.publicId) {
+        await deleteCloudinaryAsset(existing.publicId);
+      }
+    } else if (existing.filePath) {
+      await safeUnlink(path.resolve(existing.filePath));
+    }
     await PredictionFile.deleteOne({ _id: existing._id });
 
     res.status(200).json({ message: "Prediction deleted successfully" });
@@ -87,6 +167,18 @@ module.exports.downloadPrediction = async (req, res, next) => {
 
     if (!existing) {
       throw new ExpressError(404, "Prediction not found");
+    }
+
+    if (useCloudinary() && existing.publicId) {
+      const signedUrl = getSignedDownloadUrl(existing);
+      if (!signedUrl) {
+        throw new ExpressError(404, "Prediction file not found");
+      }
+      return res.redirect(signedUrl);
+    }
+
+    if (!existing.filePath) {
+      throw new ExpressError(404, "Prediction file not found");
     }
 
     const absolutePath = path.resolve(existing.filePath);

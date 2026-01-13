@@ -5,7 +5,7 @@ const predictionSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     fileName: { type: String, required: true },
     originalName: { type: String, required: true },
-    filePath: { type: String, required: true },
+    filePath: { type: String },
     fileUrl: { type: String },
     publicId: { type: String },
     version: { type: Number },

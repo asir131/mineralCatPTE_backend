@@ -5,7 +5,7 @@ const templateSchema = new mongoose.Schema(
     category: { type: String, required: true, unique: true },
     fileName: { type: String, required: true },
     originalName: { type: String, required: true },
-    filePath: { type: String, required: true },
+    filePath: { type: String },
     fileUrl: { type: String },
     publicId: { type: String },
     version: { type: Number },
