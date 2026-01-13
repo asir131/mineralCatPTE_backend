@@ -41,30 +41,20 @@ const deleteCloudinaryAsset = async (publicId) => {
   }
 };
 
-// Generate a public download URL by changing the resource type in the URL
-const getPublicDownloadUrl = (file) => {
+// Generate a simple public download URL without signing
+const getDownloadUrl = (file) => {
   const publicId = file.publicId || "";
   if (!publicId) return null;
 
-  // Extract extension from publicId or originalName
-  const publicIdExtensionMatch = publicId.match(/\.([^.]+)$/);
-  const extension =
-    publicIdExtensionMatch?.[1] ||
-    path.extname(file.originalName || "").replace(".", "") ||
-    "pdf";
+  // Simply construct the URL manually using the stored secure_url pattern
+  // This bypasses any cloudinary.url() complications
+  const cloudName = cloudinary.config().cloud_name;
 
-  const basePublicId = publicId.replace(/\.[^/.]+$/, "");
-  const version = file.version;
+  // Use the version if available
+  const versionPart = file.version ? `/v${file.version}/` : "/";
 
-  // Generate public URL with proper format
-  return cloudinary.url(basePublicId, {
-    resource_type: "raw",
-    type: "upload", // Use upload type instead of authenticated
-    secure: true,
-    format: extension,
-    flags: "attachment",
-    ...(version ? { version } : {}),
-  });
+  // Construct URL: https://res.cloudinary.com/{cloud_name}/raw/upload/v{version}/{public_id}
+  return `https://res.cloudinary.com/${cloudName}/raw/upload${versionPart}${publicId}`;
 };
 
 module.exports.listPredictions = async (req, res, next) => {
@@ -177,8 +167,8 @@ module.exports.downloadPrediction = async (req, res, next) => {
         throw new ExpressError(404, "Prediction file not found");
       }
 
-      // Generate a public download URL using the publicId
-      const downloadUrl = getPublicDownloadUrl(existing);
+      // Generate a download URL using the publicId
+      const downloadUrl = getDownloadUrl(existing);
 
       if (!downloadUrl) {
         throw new ExpressError(404, "Could not generate download URL");
