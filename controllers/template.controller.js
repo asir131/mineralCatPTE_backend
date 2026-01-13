@@ -38,7 +38,7 @@ const uploadPdfToCloudinary = async (file, folderName) => {
   const result = await cloudinary.uploader.upload(file.path, {
     folder: folderName,
     resource_type: "raw",
-    access_mode: "authenticated",
+    access_mode: "public",
     use_filename: true,
     unique_filename: true,
   });
@@ -192,12 +192,17 @@ module.exports.downloadTemplate = async (req, res, next) => {
       throw new ExpressError(404, "Template not found");
     }
 
-    if (useCloudinary() && existing.publicId) {
-      const signedUrl = getSignedDownloadUrl(existing);
-      if (!signedUrl) {
-        throw new ExpressError(404, "Template file not found");
+    if (useCloudinary()) {
+      if (existing.fileUrl) {
+        return res.redirect(existing.fileUrl);
       }
-      return res.redirect(signedUrl);
+      if (existing.publicId) {
+        const signedUrl = getSignedDownloadUrl(existing);
+        if (!signedUrl) {
+          throw new ExpressError(404, "Template file not found");
+        }
+        return res.redirect(signedUrl);
+      }
     }
 
     if (!existing.filePath) {
