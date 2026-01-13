@@ -18,7 +18,7 @@ const paymentHistorySchema = new Schema({
     },
     currency: {
         type: String,
-        default: 'usd',
+        default: 'eur',
     },
     provider: {
         type: String,

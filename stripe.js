@@ -175,7 +175,7 @@ const createPaymentIntent = async (userId, paymentDetails) => {
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountInCents,
-      currency: 'usd',
+      currency: 'eur',
       description: description,
       metadata: { driverId, userId },
       application_fee_amount: Math.round(amountInCents * 0.05),
@@ -257,7 +257,7 @@ const createCheckoutSession = async (userId, paymentDetails) => {
       payment_method_types: ['card'],
       line_items: [{
         price_data: {
-          currency: 'usd',
+          currency: 'eur',
           product_data: {
             name: 'Truck Rental',
             description,

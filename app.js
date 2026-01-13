@@ -82,6 +82,8 @@ const SectionalMockTestRoutes = require("./routes/mockTestRoutes/SectionalMockTe
 const termsAndConditions = require("./routes/adminRoutes/terms.routes");
 const aboutUs = require("./routes/adminRoutes/aboutUs.routes");
 const privacy = require("./routes/adminRoutes/privacypolicy.routes");
+const templateRoutes = require("./routes/template.routes");
+const predictionRoutes = require("./routes/prediction.routes");
 
 // models
 const userModel = require("./models/user.models");
@@ -185,6 +187,8 @@ app.use("/sectional-mock-test", SectionalMockTestRoutes);
 app.use("/terms", termsAndConditions);
 app.use("/about-us", aboutUs);
 app.use("/privacy-policy", privacy);
+app.use("/templates", templateRoutes);
+app.use("/predictions", predictionRoutes);
 
 // async function main() {
 //     mongoose.connect('mongodb://127.0.0.1:27017/MineralCatPTE');

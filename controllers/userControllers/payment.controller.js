@@ -12,7 +12,7 @@ module.exports.stripePaymentIntent = asyncWrapper(async(req, res)=>{
     const paymentIntent = await stripe.paymentIntents.create(
         {
             amount,
-            currency: 'usd',
+            currency: 'eur',
             automatic_payment_methods: { enabled: true },
         }
     )
