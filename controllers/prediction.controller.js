@@ -60,7 +60,7 @@ module.exports.listPredictions = async (req, res, next) => {
   try {
     const predictions = await PredictionFile.find({})
       .sort({ createdAt: -1 })
-      .select("name originalName createdAt");
+      .select("name originalName fileUrl publicId version createdAt");
 
     res.status(200).json({
       data: predictions,
@@ -102,6 +102,9 @@ module.exports.createPrediction = async (req, res, next) => {
           _id: created._id,
           name: created.name,
           originalName: created.originalName,
+          fileUrl: created.fileUrl,
+          publicId: created.publicId,
+          version: created.version,
         },
       });
     }
@@ -121,6 +124,9 @@ module.exports.createPrediction = async (req, res, next) => {
         _id: created._id,
         name: created.name,
         originalName: created.originalName,
+        fileUrl: created.fileUrl || "",
+        publicId: created.publicId || "",
+        version: created.version || "",
       },
     });
   } catch (error) {
