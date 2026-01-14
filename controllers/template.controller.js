@@ -57,6 +57,7 @@ const deleteCloudinaryAsset = async (publicId) => {
 const getSignedDownloadUrl = (file) => {
   const publicId = file.publicId || "";
   if (!publicId) return null;
+  const version = file.version;
   return cloudinary.url(publicId, {
     resource_type: "raw",
     type: "authenticated",
@@ -64,6 +65,7 @@ const getSignedDownloadUrl = (file) => {
     secure: true,
     expires_at: Math.floor(Date.now() / 1000) + 300,
     flags: "attachment",
+    ...(version ? { version } : {}),
   });
 };
 
