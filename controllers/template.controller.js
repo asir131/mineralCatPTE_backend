@@ -38,7 +38,7 @@ const uploadPdfToCloudinary = async (file, folderName) => {
   const result = await cloudinary.uploader.upload(file.path, {
     folder: folderName,
     resource_type: "raw",
-    type: "upload", // Explicitly set as upload type for public access
+    access_mode: "authenticated",
     use_filename: true,
     unique_filename: true,
   });
@@ -54,20 +54,17 @@ const deleteCloudinaryAsset = async (publicId) => {
   }
 };
 
-// Generate a simple public download URL without signing
-const getDownloadUrl = (file) => {
+const getSignedDownloadUrl = (file) => {
   const publicId = file.publicId || "";
   if (!publicId) return null;
-
-  // Simply construct the URL manually using the stored secure_url pattern
-  // This bypasses any cloudinary.url() complications
-  const cloudName = cloudinary.config().cloud_name;
-
-  // Use the version if available
-  const versionPart = file.version ? `/v${file.version}/` : "/";
-
-  // Construct URL: https://res.cloudinary.com/{cloud_name}/raw/upload/v{version}/{public_id}
-  return `https://res.cloudinary.com/${cloudName}/raw/upload${versionPart}${publicId}`;
+  return cloudinary.url(publicId, {
+    resource_type: "raw",
+    type: "authenticated",
+    sign_url: true,
+    secure: true,
+    expires_at: Math.floor(Date.now() / 1000) + 300,
+    flags: "attachment",
+  });
 };
 
 module.exports.uploadTemplate = async (req, res, next) => {
@@ -189,8 +186,7 @@ module.exports.downloadTemplate = async (req, res, next) => {
         throw new ExpressError(404, "Template file not found");
       }
 
-      // Generate a download URL using the publicId
-      const downloadUrl = getDownloadUrl(existing);
+      const downloadUrl = getSignedDownloadUrl(existing);
 
       if (!downloadUrl) {
         throw new ExpressError(404, "Could not generate download URL");
