@@ -38,7 +38,7 @@ const uploadPdfToCloudinary = async (file, folderName) => {
   const result = await cloudinary.uploader.upload(file.path, {
     folder: folderName,
     resource_type: "raw",
-    access_mode: "authenticated",
+    access_mode: "public",
     use_filename: true,
     unique_filename: true,
   });
@@ -54,19 +54,12 @@ const deleteCloudinaryAsset = async (publicId) => {
   }
 };
 
-const getSignedDownloadUrl = (file) => {
+const getPublicDownloadUrl = (file) => {
   const publicId = file.publicId || "";
   if (!publicId) return null;
-  const version = file.version;
-  return cloudinary.url(publicId, {
-    resource_type: "raw",
-    type: "authenticated",
-    sign_url: true,
-    secure: true,
-    expires_at: Math.floor(Date.now() / 1000) + 300,
-    flags: "attachment",
-    ...(version ? { version } : {}),
-  });
+  const cloudName = cloudinary.config().cloud_name;
+  const versionPart = file.version ? `/v${file.version}/` : "/";
+  return `https://res.cloudinary.com/${cloudName}/raw/upload${versionPart}${publicId}`;
 };
 
 module.exports.uploadTemplate = async (req, res, next) => {
@@ -188,7 +181,7 @@ module.exports.downloadTemplate = async (req, res, next) => {
         throw new ExpressError(404, "Template file not found");
       }
 
-      const downloadUrl = getSignedDownloadUrl(existing);
+      const downloadUrl = getPublicDownloadUrl(existing);
 
       if (!downloadUrl) {
         throw new ExpressError(404, "Could not generate download URL");
