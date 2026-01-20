@@ -10,7 +10,12 @@ const faqsSchema = new Schema({
   answer: {
     type: String,
     required: true,
-  }
+  },
+  placement: {
+    type: String,
+    enum: ["pricing", "home"],
+    default: "pricing",
+  },
 }, {
   timestamps: true,
 });
